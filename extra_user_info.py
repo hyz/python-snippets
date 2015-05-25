@@ -41,11 +41,11 @@ def extra_info(cursor, in_f):
 
 ### ### ### ### ### ### ### ### ### ### ### ###
 if __name__ == '__main__':
-    host   = '192.168.1.57'
+    host   = '127.0.0.1'
     port   = 3306
-    user   = 'laohu'
-    passwd = 'nicecool'
-    db     = 'yuexia2'
+    user   = 'wood'
+    passwd = '*SECRET*'
+    db     = 'test'
 
     # dbc = mysql.connect(user=user, passwd=passwd, database=db, host=host, charset='utf8')
     dbc = mysql.connect(host=host, user=user, passwd=passwd, db=db, charset='utf8')

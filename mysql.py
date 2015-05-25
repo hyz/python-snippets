@@ -2,7 +2,7 @@
 
 import MySQLdb
 
-db = MySQLdb.connect(host="127.0.0.1", user="lindu", passwd="lindu12345", db="lindu_moon")
+db = MySQLdb.connect(host="127.0.0.1", user="test", passwd="**", db="test")
 c = db.cursor()
 
 c.execute("SELECT * FROM users")
