@@ -27,6 +27,7 @@ import subprocess
 import io
  
 Null = open(os.devnull) #_Empty()
+HOME = os.getenv('HOME')
 
 class Part(object):
     #'Content-Disposition' #'application/octet-stream'
@@ -230,7 +231,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 pass
 
         with open('.file_', 'w') as out:
-            if 0 == subprocess.call(['.bin/xlsprint', fp], stdout=out):
+            if 0 == subprocess.call(['%s/bin/xlsprint' % HOME, fp], stdout=out):
                 oldfp = _readlink('.orig')
                 if oldfp:
                     if oldfp != fp:
