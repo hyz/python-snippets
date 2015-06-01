@@ -89,19 +89,6 @@ def multipart(rfile, content_type):
         part.parse(line)
 
 class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
- 
-    '''Simple HTTP request handler with GET/HEAD/POST commands.
-
-    This serves files from the current directory and any of its
-    subdirectories.  The MIME type for files is determined by
-    calling the .guess_type() method. And can reveive file uploaded
-    by client.
-
-    The GET/HEAD/POST requests are identical except that the HEAD
-    request omits the actual contents of the file.
-
-    '''
- 
     server_version = "SimpleHTTPWithUpload/" + __version__
 
     #parameter_list ::=
@@ -115,7 +102,20 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         file = kwargs.pop('file', self.wfile)
         __builtins__.print(*args, sep=sep, file=file, **kwargs)
 
-    def format_html(self, word, lines):
+    def format_html(self, word, th, rows):
+        def print_row(row, file=self.wfile):
+            print('<tr>', file=file)
+            for i,col in enumerate(row):
+                print(('<td>','<td align="right">')[i==2], file=file)
+                idx = col.rfind(word)
+                if idx >= 0:
+                    print(col[0:idx], '<font color="#990012"><u>', word, '</u></font>', col[idx+len(word):], file=file, sep='')
+                    #print(col[0:idx], '<u>', word, '</u>', col[idx+len(word):], file=file, sep='')
+                else:
+                    print(col, file=file)
+                print('</td>', file=file)
+            print('</tr>', file=file)
+            #print('<li><a href="%s">%s</a>' % (urllib.parse.quote(linkname), cgi.escape(displayname)), file=f)
         with io.StringIO() as f:
             print('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">', file=f)
             print('<HTML>', '<title>Search %s</title>' % word, '<BODY>', file=f)
@@ -127,14 +127,9 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             print('</FORM>', file=f)
 
             print('<HR>', '<TABLE border="1" cellspacing="0">', file=f)
-            color_word = '<font color="red">' + word + '</font>'
-            for line in lines:
-                cols = line.split('\t') #cols[-1] = cols[-1].strip()
-                print('<tr>', file=f)
-                for col in cols:
-                    print('<td>', col.replace(word, color_word), '</td>', file=f)
-                print('</tr>', file=f)
-                #print('<li><a href="%s">%s</a>' % (urllib.parse.quote(linkname), cgi.escape(displayname)), file=f)
+            print_row(th, file=f)
+            for row in rows:
+                print_row(row, file=f)
             print('</TABLE>', '<HR>', file=f)
 
             print('<FORM ENCTYPE="multipart/form-data" method="POST">', file=f)
@@ -148,8 +143,20 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         return utf8
 
     def grep(self, word):
-        out, _ = subprocess.Popen(['grep', word, '.file'], stdout=subprocess.PIPE).communicate()
-        return out.decode().split('\n') #str(out, 'UTF-8')
+        #out, _ = subprocess.Popen(['grep', word, '.file'], stdout=subprocess.PIPE).communicate()
+        with open('.file') as f:
+            th = f.readline().split('\t')
+            assert len(th) > 2
+            rows = []
+            for line in f: #out.decode().split('\n'): #str(out, 'UTF-8')
+                r = line.split('\t') 
+                if len(r) != len(th):
+                    continue
+                kpos2 = len(r[2]) - r[2].rfind(word)
+                if kpos2 <= len(r[2]) or len(r[6]) - r[6].rfind(word) <= len(r[6]):
+                    rows.append(r)
+            rows.sort(key=lambda r: len(r[2])-r[2].rfind(word))#(, reverse=True)
+            return (th, rows)
  
     def do_GET(self):
         '''Serve a GET request.'''
@@ -158,7 +165,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith('/?') and self.querys:
             k = self.querys.get('k')
             if k:
-                utf8 = self.format_html(k, self.grep(k))
+                utf8 = self.format_html(k, *self.grep(k))
                 self.send_response(200)
                 self.send_header("Content-type", "text/html; charset=UTF-8")
                 self.send_header("Content-Length", str(len(utf8)))
@@ -175,11 +182,11 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
  
     def do_POST(self):
         with io.StringIO() as f: # io.BytesIO()
-            suc, info = self.deal_post_data()
+            suc, info = self._do_post_data()
             suc = ('Failed','Success')[int(suc)]
 
             print('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">', file=f)
-            print("<HTML>', '<TITLE>Upload Result Page</TITLE>', '<BODY>", file=f)
+            print('<HTML>', '<TITLE>Upload Result Page</TITLE>', '<BODY>', file=f)
             print('<h2>Upload Result Page</h2>', file=f)
             print('<HR/>', '<strong>%s</strong>' % suc, info, file=f)
             print('<BR/>', '<a href="%s">back</a>' % self.headers['referer'], file=f)
@@ -194,7 +201,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content) # self.copyfile(f, self.wfile)
         
-    def deal_post_data(self):
+    def _do_post_data(self):
         filename = None
         for part in multipart(self.rfile, self.headers['content-type']):
             if part.filename:
@@ -209,51 +216,6 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 except IOError:
                     return (False, "Upload fail: file=%s" % fp)
         return (False, 'Upload fail: %s' % filename)
-        #content_type = self.headers['content-type']
-        #if not content_type:
-        #    return (False, "Content-Type header doesn't contain boundary")
-        #boundary = content_type.split("=")[1].encode()
-        #remainbytes = int(self.headers['content-length'])
-
-        #line = self.rfile.readline()
-        #if not boundary in line:
-        #    return (False, "Content NOT begin with boundary")
-        #remainbytes -= len(line)
-
-        #line = self.rfile.readline()
-        #remainbytes -= len(line)
-        #fn = re.findall(r'Content-Disposition.*name="file"; filename="(.*)"', line.decode())
-        #if not (fn and fn[0]):
-        #    return (False, "Filename not found. Please select a file and try again...")
-        #fn = html.unescape(fn[0])
-        #fp = os.path.join(self.real_path(), fn)
-
-        #line = self.rfile.readline()
-        #remainbytes -= len(line)
-        #line = self.rfile.readline()
-        #remainbytes -= len(line)
-        #try:
-        #    out = open(fp, 'wb')
-        #except IOError:
-        #    return (False, "Can't create file(%s:%s) to write, do you have permission to write?" % (fp,fn[0]))
-
-        #preline = self.rfile.readline()
-        #remainbytes -= len(preline)
-        #while remainbytes > 0:
-        #    line = self.rfile.readline()
-        #    remainbytes -= len(line)
-        #    if boundary in line:
-        #        preline = preline[0:-1]
-        #        if preline.endswith(b'\r'):
-        #            preline = preline[0:-1]
-        #        out.write(preline)
-        #        out.close()
-        #        self.simplyfied_table(fp)
-        #        return (True, 'File "%s - %s" upload success!' % (fn, fp))
-        #    else:
-        #        out.write(preline)
-        #        preline = line
-        #return (False, "Unexpect Ends of data.")
  
     def simplyfied_table(self, fp):
         def _readlink(lnk):
@@ -319,37 +281,37 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             return Null
         list.sort(key=lambda a: a.lower())
         displaypath = cgi.escape(urllib.parse.unquote(self.path))
-        f = io.StringIO() # io.BytesIO()
-        print('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">', file=f)
-        print('<HTML>', '<title>Directory listing for %s</title>' % displaypath, '<BODY>', file=f)
-        print('<h2>Directory listing for %s</h2>' % displaypath, '<hr/>', file=f)
-        print('<FORM ENCTYPE="multipart/form-data" method="POST">', file=f)
-        print('<INPUT name="file" type="file"/>', file=f)
-        print('<INPUT type="submit" value="upload"/>', file=f)
-        print('</FORM>', '<hr><ul>', file=f)
-        for name in list:
-            fullname = os.path.join(path, name)
-            displayname = linkname = name
-            # Append / for directories or @ for symbolic links
-            if os.path.isdir(fullname):
-                displayname = name + "/"
-                linkname = name + "/"
-            if os.path.islink(fullname):
-                displayname = name + "@"
-                # Note: a link to a directory displays with @ and links with /
-            print('<li><a href="%s">%s</a>' % (urllib.parse.quote(linkname), cgi.escape(displayname)), file=f)
-        print('</ul><hr>', file=f)
+        with io.StringIO() as f:
+            print('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">', file=f)
+            print('<HTML>', '<title>Directory listing for %s</title>' % displaypath, '<BODY>', file=f)
+            print('<h2>Directory listing for %s</h2>' % displaypath, '<hr/>', file=f)
+            print('<FORM ENCTYPE="multipart/form-data" method="POST">', file=f)
+            print('<INPUT name="file" type="file"/>', file=f)
+            print('<INPUT type="submit" value="upload"/>', file=f)
+            print('</FORM>', '<hr><ul>', file=f)
+            for name in list:
+                fullname = os.path.join(path, name)
+                displayname = linkname = name
+                # Append / for directories or @ for symbolic links
+                if os.path.isdir(fullname):
+                    displayname = name + "/"
+                    linkname = name + "/"
+                if os.path.islink(fullname):
+                    displayname = name + "@"
+                    # Note: a link to a directory displays with @ and links with /
+                print('<li><a href="%s">%s</a>' % (urllib.parse.quote(linkname), cgi.escape(displayname)), file=f)
+            print('</ul><hr>', file=f)
 
-        print('<FORM method="GET" action="/?">', file=f)
-        print('<INPUT type="text" name="k"/>', file=f)
-        print('<INPUT type="submit" value="search"/>', file=f)
-        print('</FORM>', file=f)
+            print('<FORM method="GET" action="/?">', file=f)
+            print('<INPUT type="text" name="k"/>', file=f)
+            print('<INPUT type="submit" value="search"/>', file=f)
+            print('</FORM>', file=f)
 
-        print("</BODY>", "</HTML>", file=f)
+            print('</BODY>', '</HTML>', file=f)
 
-        content = f.getvalue().encode('UTF-8')
+            content = f.getvalue().encode('UTF-8')
         #length = f.tell() f.seek(0)
-        f.close()
+        #f.close()
 
         self.send_response(200)
         self.send_header("Content-type", "text/html; charset=UTF-8")
@@ -418,5 +380,5 @@ def main():
     httpd.serve_forever()
  
 if __name__ == '__main__':
-    test()
+    main()
 
